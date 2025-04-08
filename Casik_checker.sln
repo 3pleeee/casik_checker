@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35323.107
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "Casik_checker", "Casik_checker\Casik_checker.pyproj", "{C70C349D-AB9A-4625-B215-501B33A2E54E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C70C349D-AB9A-4625-B215-501B33A2E54E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C70C349D-AB9A-4625-B215-501B33A2E54E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8FBC68A6-60ED-43DA-81B2-FB4C9B8C72D7}
+	EndGlobalSection
+EndGlobal
