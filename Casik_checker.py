@@ -1,100 +1,76 @@
-﻿
-from telegram import Update, ChatMember
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-import json
+import logging
 import os
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from dotenv import load_dotenv
 
-# ======== Хранилище звёзд ========
-if os.path.exists("stars.json"):
-    with open("stars.json", "r") as f:
-        user_stars = json.load(f)
-else:
-    user_stars = {}
+load_dotenv()
 
-# ======== Функции ========
-def save_stars():
-    with open("stars.json", "w") as f:
-        json.dump(user_stars, f)
+# === Конфигурация ===
+API_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+COST_PER_MESSAGE = 10
 
-def get_user_id(user):
-    return str(user.id)
+# Простая база: user_id -> звёзды
+user_stars = {}
 
-def get_stars(user_id):
-    return user_stars.get(user_id, 0)
+# === Логгирование ===
+logging.basicConfig(level=logging.INFO)
 
-def add_stars(user_id, amount):
-    user_stars[user_id] = get_stars(user_id) + amount
-    save_stars()
+# === Инициализация ===
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot, storage=MemoryStorage())
 
-def deduct_stars(user_id, amount):
-    if get_stars(user_id) >= amount:
-        user_stars[user_id] -= amount
-        save_stars()
-        return True
-    return False
+# === Команда /start ===
+@dp.message_handler(commands=["start"])
+async def start_handler(message: types.Message):
+    user_id = message.from_user.id
+    user_stars.setdefault(user_id, 30)  # Начальные звезды
+    await message.answer(f"Привет! У тебя {user_stars[user_id]}⭐. Отправка сообщений в группу стоит {COST_PER_MESSAGE}⭐.")
 
-# ======== Команды ========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update.effective_user)
-    if user_id not in user_stars:
-        add_stars(user_id, 20)  # стартовые звёзды
-    await update.message.reply_text(f"Привет! У тебя {get_stars(user_id)} ⭐")
+# === Команда /help ===
+@dp.message_handler(commands=["help"])
+async def help_handler(message: types.Message):
+    help_text = """
+Команды:
+/start — начать и узнать баланс
+/help — помощь
+/addstars ID КОЛ-ВО — (только админ)
+"""
+    await message.answer(help_text)
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update.effective_user)
-    await update.message.reply_text(f"У тебя {get_stars(user_id)} ⭐")
-
-async def give(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.effective_user.id in [admin.user.id async for admin in await update.effective_chat.get_administrators()]:
-        await update.message.reply_text("Только админ может выдавать звёзды.")
-        return
-
-    if len(context.args) != 2:
-        await update.message.reply_text("Используй: /give @username 50")
-        return
+# === Пополнение звёзд (только для админа) ===
+@dp.message_handler(commands=["addstars"])
+async def add_stars_handler(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return await message.reply("⛔ Только для администратора.")
 
     try:
-        username = context.args[0].replace("@", "")
-        amount = int(context.args[1])
-        members = await update.effective_chat.get_members()
-        for member in members:
-            if member.user.username == username:
-                user_id = get_user_id(member.user)
-                add_stars(user_id, amount)
-                await update.message.reply_text(f"Выдано {amount} ⭐ пользователю @{username}")
-                return
-        await update.message.reply_text("Пользователь не найден в чате.")
-    except:
-        await update.message.reply_text("Ошибка. Проверь формат.")
+        _, uid, amount = message.text.split()
+        uid = int(uid)
+        amount = int(amount)
+        user_stars[uid] = user_stars.get(uid, 0) + amount
+        await message.answer(f"✅ Пользователю {uid} добавлено {amount}⭐. Сейчас: {user_stars[uid]}⭐")
+    except Exception:
+        await message.reply("⚠️ Используй: /addstars [ID] [кол-во]")
 
-# ======== Обработка сообщений ========
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = get_user_id(update.effective_user)
+# === Пользователь хочет отправить сообщение в группу ===
+@dp.message_handler(lambda m: not m.text.startswith("/"))
+async def send_to_group_handler(message: types.Message):
+    user_id = message.from_user.id
+    stars = user_stars.get(user_id, 0)
 
-    if deduct_stars(user_id, 10):
-        await update.message.reply_text(f"−10 ⭐. Осталось {get_stars(user_id)}.")
-    else:
-        await update.message.delete()
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text="У тебя недостаточно звёзд, чтобы отправить сообщение. Нужно 10 ⭐."
-            )
-        except:
-            pass
+    if stars < COST_PER_MESSAGE:
+        return await message.reply(f"❌ Недостаточно звёзд! У тебя {stars}⭐, нужно {COST_PER_MESSAGE}⭐.")
 
-# ======== Запуск ========
-app = ApplicationBuilder().token("ВАШ_ТОКЕН_БОТА").build()
+    # Успешно списываем
+    user_stars[user_id] -= COST_PER_MESSAGE
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("balance", balance))
-app.add_handler(CommandHandler("give", give))
-app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    # Пример — пересылаем сообщение в группу
+    GROUP_ID = int(os.getenv("GROUP_ID"))
+    await bot.send_message(GROUP_ID, f"Сообщение от @{message.from_user.username} (⭐ осталось: {user_stars[user_id]}):\n{message.text}")
+    await message.reply(f"✅ Сообщение отправлено! У тебя осталось {user_stars[user_id]}⭐.")
 
-app.run_polling()
+# === Запуск ===
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
